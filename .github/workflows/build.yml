@@ -7,47 +7,43 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install system dependencies
+      - name: Install system dependencies (fixes libffi / AC_PROG_LIBTOOL)
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential \
-            git \
-            zip \
-            unzip \
-            openjdk-17-jdk \
-            autoconf \
-            automake \
-            libtool \
-            pkg-config \
-            libssl-dev \
-            libffi-dev \
-            zlib1g-dev \
-            libncurses5-dev \
-            libbz2-dev \
-            liblzma-dev \
-            libsqlite3-dev \
-            aidl
+            libtool libtool-bin autoconf automake \
+            pkg-config zip unzip git \
+            libssl-dev libffi-dev zlib1g-dev
 
       - name: Install Buildozer and Cython
         run: |
           pip install --upgrade pip
           pip install buildozer cython
 
-      - name: Build APK
-        run: buildozer android debug
+      - name: Accept Android SDK licenses (fixes "Aidl not found")
+        run: |
+          mkdir -p ~/.android
+          touch ~/.android/repositories.cfg
+          yes | sdkmanager --licenses || true
+        env:
+          ANDROID_HOME: ${{ github.workspace }}/.android-sdk
 
-      - name: Upload APK
+      - name: Build APK
+        run: buildozer -v android debug
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: journal-apk
           path: bin/*.apk
+          retention-days: 30
