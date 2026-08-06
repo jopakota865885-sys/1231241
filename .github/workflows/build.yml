@@ -2,30 +2,60 @@ name: Build APK
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ main ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Setup Python
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
+      # Системные зависимости (включая libtool, чтобы не падал libffi)
+      - name: Install system dependencies
         run: |
-          pip install buildozer cython
           sudo apt-get update
-          sudo apt-get install -y libtool autoconf automake \
-            pkg-config zip unzip zlib1g-dev openjdk-17-jdk
+          sudo apt-get install -y \
+            build-essential git zip unzip cmake \
+            openjdk-17-jdk \
+            autoconf automake libtool libtool-bin pkg-config \
+            libffi-dev libssl-dev zlib1g-dev
+
+      - name: Install buildozer
+        run: |
+          pip install --upgrade pip
+          pip install buildozer cython
+
+      # ПРИНИМАЕМ ЛИЦЕНЗИИ И СТАВИМ BUILD-TOOLS (фикс "Aidl not found")
+      - name: Accept Android licenses and install build-tools
+        run: |
+          mkdir -p ~/.android
+          touch ~/.android/repositories.cfg
+          SDKMANAGER=""
+          for p in "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+                   "$ANDROID_HOME/tools/bin/sdkmanager"; do
+            if [ -x "$p" ]; then SDKMANAGER="$p"; break; fi
+          done
+          echo "sdkmanager = $SDKMANAGER"
+          if [ -n "$SDKMANAGER" ]; then
+            yes | "$SDKMANAGER" --licenses || true
+            "$SDKMANAGER" "build-tools;33.0.2" "platform-tools" || true
+          fi
 
       - name: Build APK
-        run: buildozer -v android debug
+        run: |
+          buildozer android debug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: journal-apk
           path: bin/*.apk
+          retention-days: 30
