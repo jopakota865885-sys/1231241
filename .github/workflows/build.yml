@@ -1,4 +1,5 @@
 name: Build APK
+
 on:
   workflow_dispatch:
   push:
@@ -6,11 +7,11 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -20,21 +21,15 @@ jobs:
           pip install --upgrade buildozer cython
           sudo apt-get update
           sudo apt-get install -y \
-            git zip unzip openjdk-17-jdk \
-            autoconf automake libtool libtool-bin \
-            libffi-dev libssl-dev zlib1g-dev \
-            libncurses5-dev libncursesw5-dev \
-            libbz2-dev liblzma-dev libsqlite3-dev \
-            libreadline-dev libgdbm-dev libdb-dev \
-            tk-dev libbluetooth-dev
+            libtool autoconf automake pkg-config \
+            zip unzip openjdk-17-jdk \
+            libffi-dev libssl-dev zlib1g-dev
 
       - name: Build APK
-        run: |
-          buildozer android debug
-          
+        run: buildozer android debug
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: journal-apk
           path: bin/*.apk
-          retention-days: 30
