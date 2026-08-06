@@ -29,19 +29,41 @@ jobs:
           curl -sSL -o /tmp/tools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
           unzip -q /tmp/tools.zip -d "$SDK/cmdline-tools"
           mv "$SDK/cmdline-tools/cmdline-tools" "$SDK/cmdline-tools/latest"
+          
+          # Принять лицензии
           yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
-          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" \
-            "platform-tools" "build-tools;33.0.2" "platforms;android-33" > /dev/null || true
+          
+          # Установить необходимые компоненты (без флага -y, чтобы избежать проблем)
+          echo "y" | "$SDK/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" \
+            "build-tools;33.0.2" \
+            "platforms;android-33"
+          
+          # Экспорт переменных окружения
           echo "ANDROID_HOME=$SDK" >> $GITHUB_ENV
           echo "ANDROIDSDK=$SDK" >> $GITHUB_ENV
-          echo "$SDK/build-tools/33.0.2" >> $GITHUB_PATH
-          echo "$SDK/platform-tools" >> $GITHUB_PATH
+          echo "PATH=$PATH:$SDK/build-tools/33.0.2:$SDK/platform-tools" >> $GITHUB_ENV
+          
+          # Проверка наличия aidl
+          if [ -f "$SDK/build-tools/33.0.2/aidl" ]; then
+            echo "✅ AIDL найден: $SDK/build-tools/33.0.2/aidl"
+          else
+            echo "❌ Ошибка: AIDL не найден!"
+            ls -la "$SDK/build-tools/33.0.2/"
+            exit 1
+          fi
 
       - name: Install buildozer
         run: pip install buildozer cython
 
       - name: Build APK
-        run: buildozer android debug
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          ANDROIDSDK: ${{ env.ANDROIDSDK }}
+        run: |
+          echo "🔍 Проверка PATH: $PATH"
+          which aidl || echo "⚠️ aidl не найден в PATH"
+          buildozer android debug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
