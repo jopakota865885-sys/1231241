@@ -32,60 +32,53 @@ jobs:
       - name: Install Buildozer
         run: pip install --upgrade buildozer cython
 
-      - name: Setup Android SDK (Fix for Buildozer)
+      - name: Setup Android SDK (Fixed for Buildozer)
         run: |
-          # Определяем пути
           SDK_DIR="$HOME/.buildozer/android/platform/android-sdk"
           CMDLINE_DIR="$SDK_DIR/cmdline-tools/latest"
-          TOOLS_OLD_DIR="$SDK_DIR/tools/bin"
           
-          # Создаем структуру
+          echo "📂 Creating directory structure: $CMDLINE_DIR"
           mkdir -p "$CMDLINE_DIR"
-          mkdir -p "$TOOLS_OLD_DIR"
           
-          # Скачиваем и распаковываем
+          echo "📥 Downloading Android Command Line Tools..."
           cd /tmp
-          echo "📥 Downloading Command Line Tools..."
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O tools.zip
           unzip -q tools.zip
-          mv cmdline-tools "$CMDLINE_DIR"
           
-          # Устанавливаем компоненты, используя ПОЛНЫЙ ПУТЬ к sdkmanager
+          mv cmdline-tools/bin "$CMDLINE_DIR/"
+          mv cmdline-tools/lib "$CMDLINE_DIR/"
+          mv cmdline-tools/NOTICE.txt "$CMDLINE_DIR/"
+          mv cmdline-tools/source.properties "$CMDLINE_DIR/"
+          
+          mkdir -p "$SDK_DIR/tools/bin"
+          ln -s "$CMDLINE_DIR/bin/sdkmanager" "$SDK_DIR/tools/bin/sdkmanager"
+          ln -s "$CMDLINE_DIR/bin/avdmanager" "$SDK_DIR/tools/bin/avdmanager"
+          
           export JAVA_HOME=$JAVA_HOME_17_X64
-          SDKMANAGER="$CMDLINE_DIR/bin/sdkmanager"
+          export PATH=$PATH:$CMDLINE_DIR/bin
           
           echo "📝 Accepting licenses..."
-          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          yes | "$CMDLINE_DIR/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
           
           echo "📦 Installing build-tools, platform-tools and platforms..."
-          "$SDKMANAGER" "platform-tools" "build-tools;33.0.2" "platforms;android-33"
+          "$CMDLINE_DIR/bin/sdkmanager" "platform-tools" "build-tools;33.0.2" "platforms;android-33"
           
-          # КРИТИЧЕСКИЙ ШАГ: Создаем симлинки в старую папку tools/bin, которую ищет Buildozer
-          echo "🔗 Creating compatibility symlinks for Buildozer..."
-          ln -sf "$CMDLINE_DIR/bin/sdkmanager" "$TOOLS_OLD_DIR/sdkmanager"
-          ln -sf "$CMDLINE_DIR/bin/avdmanager" "$TOOLS_OLD_DIR/avdmanager"
-          ln -sf "$CMDLINE_DIR/bin/apksigner" "$TOOLS_OLD_DIR/apksigner"
-          
-          # Проверка
-          if [ -f "$TOOLS_OLD_DIR/sdkmanager" ] && [ -f "$SDK_DIR/build-tools/33.0.2/aidl" ]; then
-            echo "✅ SUCCESS: SDK setup complete. Symlinks created. AIDL found."
-            ls -la "$TOOLS_OLD_DIR"
+          if [ -f "$SDK_DIR/build-tools/33.0.2/aidl" ]; then
+            echo "✅ SUCCESS: AIDL found!"
           else
-            echo "❌ ERROR: Setup failed."
+            echo "❌ ERROR: AIDL not found in build-tools!"
             exit 1
           fi
           
-          # Экспорт переменных
           echo "ANDROID_HOME=$SDK_DIR" >> $GITHUB_ENV
           echo "ANDROIDSDK=$SDK_DIR" >> $GITHUB_ENV
-          echo "PATH=$PATH:$SDK_DIR/build-tools/33.0.2:$SDK_DIR/platform-tools:$TOOLS_OLD_DIR" >> $GITHUB_ENV
+          echo "PATH=$PATH:$SDK_DIR/build-tools/33.0.2:$SDK_DIR/platform-tools:$CMDLINE_DIR/bin" >> $GITHUB_ENV
 
       - name: Build APK
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
           ANDROIDSDK: ${{ env.ANDROIDSDK }}
         run: |
-          # Очищаем кэш сборки, чтобы избежать ошибок от предыдущих попыток
           rm -rf .buildozer/android/platform/build
           buildozer android debug
         
