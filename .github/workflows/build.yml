@@ -1,13 +1,14 @@
 name: Build APK
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # Позволяет запустить сборку вручную кнопкой
   push:
-    branches: [main]
+    branches: [ main ]
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -17,29 +18,27 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install system dependencies (fixes libffi / AC_PROG_LIBTOOL)
+      - name: Install system dependencies (FIX for libffi)
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libtool libtool-bin autoconf automake \
-            pkg-config zip unzip git \
-            libssl-dev libffi-dev zlib1g-dev
+            libtool \
+            autoconf \
+            automake \
+            pkg-config \
+            zip \
+            unzip \
+            git \
+            openjdk-17-jdk
 
       - name: Install Buildozer and Cython
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install buildozer cython
 
-      - name: Accept Android SDK licenses (fixes "Aidl not found")
-        run: |
-          mkdir -p ~/.android
-          touch ~/.android/repositories.cfg
-          yes | sdkmanager --licenses || true
-        env:
-          ANDROID_HOME: ${{ github.workspace }}/.android-sdk
-
       - name: Build APK
-        run: buildozer -v android debug
+        run: |
+          buildozer android debug
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
