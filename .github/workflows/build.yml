@@ -32,65 +32,60 @@ jobs:
       - name: Install Buildozer
         run: pip install --upgrade buildozer cython
 
-      # КЭШИРОВАНИЕ: Сохраняем скачанные SDK и скомпилированные библиотеки
-      - name: Cache Buildozer Global
+      - name: Cache Android SDK & NDK
+        id: cache-sdk
         uses: actions/cache@v4
         with:
-          path: ~/.buildozer
-          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec', '.gitignore') }}
-          restore-keys: |
-            ${{ runner.os }}-buildozer-
+          path: ~/.buildozer/android/platform
+          key: ${{ runner.os }}-android-sdk-ndk-r25b-v1
 
-      - name: Setup Android SDK (Fixed Structure)
+      - name: Setup Android SDK (Only if cache miss)
+        if: steps.cache-sdk.outputs.cache-hit != 'true'
         run: |
           SDK_DIR="$HOME/.buildozer/android/platform/android-sdk"
           CMDLINE_DIR="$SDK_DIR/cmdline-tools/latest"
           
-          if [ ! -d "$CMDLINE_DIR/bin" ]; then
-            echo "📂 Creating directory structure..."
-            mkdir -p "$CMDLINE_DIR"
-            
-            echo "📥 Downloading Command Line Tools..."
-            cd /tmp
-            wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O tools.zip
-            unzip -q tools.zip
-            
-            mv cmdline-tools/bin "$CMDLINE_DIR/"
-            mv cmdline-tools/lib "$CMDLINE_DIR/"
-            mv cmdline-tools/NOTICE.txt "$CMDLINE_DIR/"
-            mv cmdline-tools/source.properties "$CMDLINE_DIR/"
-            
-            mkdir -p "$SDK_DIR/tools/bin"
-            ln -s "$CMDLINE_DIR/bin/sdkmanager" "$SDK_DIR/tools/bin/sdkmanager"
-            ln -s "$CMDLINE_DIR/bin/avdmanager" "$SDK_DIR/tools/bin/avdmanager"
-            
-            export JAVA_HOME=$JAVA_HOME_17_X64
-            export PATH=$PATH:$CMDLINE_DIR/bin
-            
-            echo "📝 Accepting licenses..."
-            yes | "$CMDLINE_DIR/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
-            
-            echo "📦 Installing components..."
-            "$CMDLINE_DIR/bin/sdkmanager" "platform-tools" "build-tools;33.0.2" "platforms;android-33"
-          else
-            echo "✅ SDK already exists, skipping download."
-          fi
+          mkdir -p "$CMDLINE_DIR"
+          cd /tmp
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O tools.zip
+          unzip -q tools.zip
           
+          mv cmdline-tools/bin "$CMDLINE_DIR/"
+          mv cmdline-tools/lib "$CMDLINE_DIR/"
+          mv cmdline-tools/NOTICE.txt "$CMDLINE_DIR/"
+          mv cmdline-tools/source.properties "$CMDLINE_DIR/"
+          
+          mkdir -p "$SDK_DIR/tools/bin"
+          ln -s "$CMDLINE_DIR/bin/sdkmanager" "$SDK_DIR/tools/bin/sdkmanager"
+          ln -s "$CMDLINE_DIR/bin/avdmanager" "$SDK_DIR/tools/bin/avdmanager"
+          
+          export JAVA_HOME=$JAVA_HOME_17_X64
+          export PATH=$PATH:$CMDLINE_DIR/bin
+          
+          yes | "$CMDLINE_DIR/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$CMDLINE_DIR/bin/sdkmanager" "platform-tools" "build-tools;33.0.2" "platforms;android-33"
+          
+          echo "📦 Downloading NDK r25b..."
+          cd "$HOME/.buildozer/android/platform"
+          wget -q https://dl.google.com/android/repository/android-ndk-r25b-linux.zip
+          unzip -q android-ndk-r25b-linux.zip
+          mv android-ndk-r25b android-ndk-r25b-temp
+          
+          echo "ANDROID_NDK=$HOME/.buildozer/android/platform/android-ndk-r25b" >> $GITHUB_ENV
           echo "ANDROID_HOME=$SDK_DIR" >> $GITHUB_ENV
           echo "ANDROIDSDK=$SDK_DIR" >> $GITHUB_ENV
           echo "PATH=$PATH:$SDK_DIR/build-tools/33.0.2:$SDK_DIR/platform-tools:$CMDLINE_DIR/bin" >> $GITHUB_ENV
 
-      - name: Build APK (No Clean)
+      - name: Build APK
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
           ANDROIDSDK: ${{ env.ANDROIDSDK }}
+          ANDROID_NDK: ${{ env.ANDROID_NDK }}
         run: |
-          # ВАЖНО: Мы НЕ удаляем папку build, чтобы использовать кэш
-          # rm -rf .buildozer/android/platform/build  <-- ЭТУ СТРОКУ МЫ УБРАЛИ
+          find .buildozer/android/platform/build -name "*.o" -delete || true
           
-          # Запускаем сборку
           buildozer android debug
-        
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
