@@ -1,4 +1,4 @@
-name: Build APK
+ame: Build APK
 
 on:
   workflow_dispatch:
@@ -32,64 +32,56 @@ jobs:
       - name: Install Buildozer
         run: pip install --upgrade buildozer cython
 
-      - name: Prepare Android SDK (Fixed Path)
+      - name: Prepare Android SDK (Fix for Buildozer)
         run: |
-          # Путь, который ожидает Buildozer
+          # Пути
           SDK_DIR="$HOME/.buildozer/android/platform/android-sdk"
+          CMDLINE_DIR="$SDK_DIR/cmdline-tools/latest"
+          OLD_TOOLS_DIR="$SDK_DIR/tools"
           
-          # Создаем структуру для cmdline-tools
-          mkdir -p "$SDK_DIR/cmdline-tools"
+          mkdir -p "$CMDLINE_DIR"
+          mkdir -p "$OLD_TOOLS_DIR/bin"
           
+          # Скачивание cmdline-tools
           cd /tmp
           echo "Downloading Android Command Line Tools..."
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O tools.zip
           unzip -q tools.zip
+          mv cmdline-tools "$CMDLINE_DIR"
           
-          # ВАЖНО: Перемещаем распакованную папку в latest внутри cmdline-tools
-          mv cmdline-tools "$SDK_DIR/cmdline-tools/latest"
-          
-          # Устанавливаем переменные окружения ДЛЯ ТЕКУЩЕЙ СЕССИИ
-          export PATH=$PATH:$SDK_DIR/cmdline-tools/latest/bin:$SDK_DIR/platform-tools
+          # Настройка переменных
+          export PATH=$PATH:$CMDLINE_DIR/bin:$SDK_DIR/platform-tools
           export JAVA_HOME=$JAVA_HOME_17_X64
           export ANDROID_HOME=$SDK_DIR
           export ANDROID_SDK_ROOT=$SDK_DIR
           
-          echo "Current PATH: $PATH"
-          echo "Checking sdkmanager location..."
-          ls -R "$SDK_DIR/cmdline-tools"
-          
-          # Проверяем, виден ли sdkmanager
-          if ! command -v sdkmanager &> /dev/null; then
-            echo "❌ sdkmanager not found in PATH. Trying direct execution..."
-            SDKMANAGER_BIN="$SDK_DIR/cmdline-tools/latest/bin/sdkmanager"
-            if [ ! -f "$SDKMANAGER_BIN" ]; then
-              echo "❌ Critical Error: sdkmanager binary missing at $SDKMANAGER_BIN"
-              exit 1
-            fi
-            # Если в PATH нет, используем полный путь
-            alias sdkmanager="$SDKMANAGER_BIN"
-          fi
-          
+          # Принятие лицензий
           echo "Accepting licenses..."
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
           
-          echo "Installing build-tools;33.0.2 and platforms;android-33..."
-          sdkmanager "platform-tools" "build-tools;33.0.2" "platforms;android-33"
+          # Установка компонентов
+          echo "Installing components..."
+          sdkmanager "platform-tools" "build-tools;33.0.2" "platforms;android-33" "ndk;28.0.12674087"
           
-          # Финальная проверка наличия aidl
-          AIDL_PATH="$SDK_DIR/build-tools/33.0.2/aidl"
-          if [ -f "$AIDL_PATH" ]; then
-            echo "✅ SUCCESS: AIDL found at $AIDL_PATH"
+          # === ГЛАВНОЕ ИСПРАВЛЕНИЕ ===
+          # Buildozer ищет sdkmanager в старом пути tools/bin. 
+          # Создадим ссылку на текущий sdkmanager, чтобы Buildozer его нашел.
+          ln -sf "$CMDLINE_DIR/bin/sdkmanager" "$OLD_TOOLS_DIR/bin/sdkmanager"
+          ln -sf "$CMDLINE_DIR/bin/avdmanager" "$OLD_TOOLS_DIR/bin/avdmanager"
+          
+          # Проверка
+          if [ -f "$OLD_TOOLS_DIR/bin/sdkmanager" ] && [ -f "$SDK_DIR/build-tools/33.0.2/aidl" ]; then
+            echo "✅ SUCCESS: SDK structure fixed. AIDL and sdkmanager found."
           else
-            echo "❌ CRITICAL ERROR: AIDL not found!"
-            ls -R "$SDK_DIR/build-tools/" || echo "build-tools folder missing"
+            echo "❌ ERROR: Fix failed."
+            ls -R "$SDK_DIR"
             exit 1
           fi
           
-          # Сохраняем переменные для следующих шагов (для Buildozer)
+          # Сохранение переменных окружения
           echo "ANDROID_HOME=$SDK_DIR" >> $GITHUB_ENV
           echo "ANDROIDSDK=$SDK_DIR" >> $GITHUB_ENV
-          echo "PATH=$PATH:$SDK_DIR/build-tools/33.0.2:$SDK_DIR/platform-tools:$SDK_DIR/cmdline-tools/latest/bin" >> $GITHUB_ENV
+          echo "PATH=$PATH:$CMDLINE_DIR/bin:$SDK_DIR/build-tools/33.0.2:$SDK_DIR/platform-tools" >> $GITHUB_ENV
 
       - name: Build APK with Buildozer
         env:
