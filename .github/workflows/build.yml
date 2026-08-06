@@ -1,4 +1,4 @@
-name: Build APK
+name: Build APK with Swap
 
 on:
   workflow_dispatch:
@@ -12,6 +12,17 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      # 1. СОЗДАНИЕ ФАЙЛА ПОДКАЧКИ (SWAP) - РЕШЕНИЕ ПРОБЛЕМЫ ПАМЯТИ
+      - name: Create Swap Space
+        run: |
+          sudo swapoff -a
+          sudo rm -f /swapfile
+          sudo dd if=/dev/zero of=/swapfile bs=1G count=8
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -37,7 +48,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.buildozer/android/platform
-          key: ${{ runner.os }}-android-sdk-ndk-r25b-v1
+          key: ${{ runner.os }}-android-sdk-ndk-r25b-v2
 
       - name: Setup Android SDK (Only if cache miss)
         if: steps.cache-sdk.outputs.cache-hit != 'true'
@@ -67,9 +78,11 @@ jobs:
           
           echo "📦 Downloading NDK r25b..."
           cd "$HOME/.buildozer/android/platform"
-          wget -q https://dl.google.com/android/repository/android-ndk-r25b-linux.zip
-          unzip -q android-ndk-r25b-linux.zip
-          mv android-ndk-r25b android-ndk-r25b-temp
+          if [ ! -d "android-ndk-r25b" ]; then
+            wget -q https://dl.google.com/android/repository/android-ndk-r25b-linux.zip
+            unzip -q android-ndk-r25b-linux.zip
+            mv android-ndk-r25b android-ndk-r25b-temp
+          fi
           
           echo "ANDROID_NDK=$HOME/.buildozer/android/platform/android-ndk-r25b" >> $GITHUB_ENV
           echo "ANDROID_HOME=$SDK_DIR" >> $GITHUB_ENV
@@ -82,7 +95,8 @@ jobs:
           ANDROIDSDK: ${{ env.ANDROIDSDK }}
           ANDROID_NDK: ${{ env.ANDROID_NDK }}
         run: |
-          find .buildozer/android/platform/build -name "*.o" -delete || true
+          # Очищаем только объекты компиляции, чтобы не качать всё заново, но снять нагрузку
+          find .buildozer/android/platform/build -name "*.o" -delete 2>/dev/null || true
           
           buildozer android debug
 
