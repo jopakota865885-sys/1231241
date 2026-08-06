@@ -32,66 +32,64 @@ jobs:
       - name: Install Buildozer
         run: pip install --upgrade buildozer cython
 
-      - name: Prepare Android SDK (Fix for Buildozer)
+      - name: Setup Android SDK (Fix for Buildozer)
         run: |
-          # Пути
+          # Определяем пути
           SDK_DIR="$HOME/.buildozer/android/platform/android-sdk"
           CMDLINE_DIR="$SDK_DIR/cmdline-tools/latest"
-          OLD_TOOLS_DIR="$SDK_DIR/tools"
+          TOOLS_OLD_DIR="$SDK_DIR/tools/bin"
           
+          # Создаем структуру
           mkdir -p "$CMDLINE_DIR"
-          mkdir -p "$OLD_TOOLS_DIR/bin"
+          mkdir -p "$TOOLS_OLD_DIR"
           
-          # Скачивание cmdline-tools
+          # Скачиваем и распаковываем
           cd /tmp
-          echo "Downloading Android Command Line Tools..."
+          echo "📥 Downloading Command Line Tools..."
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O tools.zip
           unzip -q tools.zip
           mv cmdline-tools "$CMDLINE_DIR"
           
-          # Настройка переменных
-          export PATH=$PATH:$CMDLINE_DIR/bin:$SDK_DIR/platform-tools
+          # Устанавливаем компоненты, используя ПОЛНЫЙ ПУТЬ к sdkmanager
           export JAVA_HOME=$JAVA_HOME_17_X64
-          export ANDROID_HOME=$SDK_DIR
-          export ANDROID_SDK_ROOT=$SDK_DIR
+          SDKMANAGER="$CMDLINE_DIR/bin/sdkmanager"
           
-          # Принятие лицензий
-          echo "Accepting licenses..."
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          echo "📝 Accepting licenses..."
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
           
-          # Установка компонентов
-          echo "Installing components..."
-          sdkmanager "platform-tools" "build-tools;33.0.2" "platforms;android-33" "ndk;28.0.12674087"
+          echo "📦 Installing build-tools, platform-tools and platforms..."
+          "$SDKMANAGER" "platform-tools" "build-tools;33.0.2" "platforms;android-33"
           
-          # === ГЛАВНОЕ ИСПРАВЛЕНИЕ ===
-          # Buildozer ищет sdkmanager в старом пути tools/bin. 
-          # Создадим ссылку на текущий sdkmanager, чтобы Buildozer его нашел.
-          ln -sf "$CMDLINE_DIR/bin/sdkmanager" "$OLD_TOOLS_DIR/bin/sdkmanager"
-          ln -sf "$CMDLINE_DIR/bin/avdmanager" "$OLD_TOOLS_DIR/bin/avdmanager"
+          # КРИТИЧЕСКИЙ ШАГ: Создаем симлинки в старую папку tools/bin, которую ищет Buildozer
+          echo "🔗 Creating compatibility symlinks for Buildozer..."
+          ln -sf "$CMDLINE_DIR/bin/sdkmanager" "$TOOLS_OLD_DIR/sdkmanager"
+          ln -sf "$CMDLINE_DIR/bin/avdmanager" "$TOOLS_OLD_DIR/avdmanager"
+          ln -sf "$CMDLINE_DIR/bin/apksigner" "$TOOLS_OLD_DIR/apksigner"
           
           # Проверка
-          if [ -f "$OLD_TOOLS_DIR/bin/sdkmanager" ] && [ -f "$SDK_DIR/build-tools/33.0.2/aidl" ]; then
-            echo "✅ SUCCESS: SDK structure fixed. AIDL and sdkmanager found."
+          if [ -f "$TOOLS_OLD_DIR/sdkmanager" ] && [ -f "$SDK_DIR/build-tools/33.0.2/aidl" ]; then
+            echo "✅ SUCCESS: SDK setup complete. Symlinks created. AIDL found."
+            ls -la "$TOOLS_OLD_DIR"
           else
-            echo "❌ ERROR: Fix failed."
-            ls -R "$SDK_DIR"
+            echo "❌ ERROR: Setup failed."
             exit 1
           fi
           
-          # Сохранение переменных окружения
+          # Экспорт переменных
           echo "ANDROID_HOME=$SDK_DIR" >> $GITHUB_ENV
           echo "ANDROIDSDK=$SDK_DIR" >> $GITHUB_ENV
-          echo "PATH=$PATH:$CMDLINE_DIR/bin:$SDK_DIR/build-tools/33.0.2:$SDK_DIR/platform-tools" >> $GITHUB_ENV
+          echo "PATH=$PATH:$SDK_DIR/build-tools/33.0.2:$SDK_DIR/platform-tools:$TOOLS_OLD_DIR" >> $GITHUB_ENV
 
-      - name: Build APK with Buildozer
+      - name: Build APK
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
           ANDROIDSDK: ${{ env.ANDROIDSDK }}
         run: |
+          # Очищаем кэш сборки, чтобы избежать ошибок от предыдущих попыток
           rm -rf .buildozer/android/platform/build
           buildozer android debug
         
-      - name: Upload APK Artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk
