@@ -3,59 +3,48 @@ name: Build APK
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-
+    runs-on: ubuntu-22.04
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
-      # Системные зависимости (включая libtool, чтобы не падал libffi)
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            build-essential git zip unzip cmake \
-            openjdk-17-jdk \
-            autoconf automake libtool libtool-bin pkg-config \
-            libffi-dev libssl-dev zlib1g-dev
+          sudo apt-get install -y libtool autoconf automake pkg-config \
+            zip unzip openjdk-17-jdk
+
+      - name: Prepare Android SDK (fix "Aidl not found")
+        run: |
+          SDK="$HOME/android-sdk"
+          mkdir -p "$SDK/cmdline-tools"
+          curl -sSL -o /tmp/tools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q /tmp/tools.zip -d "$SDK/cmdline-tools"
+          mv "$SDK/cmdline-tools/cmdline-tools" "$SDK/cmdline-tools/latest"
+          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" "build-tools;33.0.2" "platforms;android-33" > /dev/null || true
+          echo "ANDROID_HOME=$SDK" >> $GITHUB_ENV
+          echo "ANDROIDSDK=$SDK" >> $GITHUB_ENV
+          echo "$SDK/build-tools/33.0.2" >> $GITHUB_PATH
+          echo "$SDK/platform-tools" >> $GITHUB_PATH
 
       - name: Install buildozer
-        run: |
-          pip install --upgrade pip
-          pip install buildozer cython
-
-      # ПРИНИМАЕМ ЛИЦЕНЗИИ И СТАВИМ BUILD-TOOLS (фикс "Aidl not found")
-      - name: Accept Android licenses and install build-tools
-        run: |
-          mkdir -p ~/.android
-          touch ~/.android/repositories.cfg
-          SDKMANAGER=""
-          for p in "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
-                   "$ANDROID_HOME/tools/bin/sdkmanager"; do
-            if [ -x "$p" ]; then SDKMANAGER="$p"; break; fi
-          done
-          echo "sdkmanager = $SDKMANAGER"
-          if [ -n "$SDKMANAGER" ]; then
-            yes | "$SDKMANAGER" --licenses || true
-            "$SDKMANAGER" "build-tools;33.0.2" "platform-tools" || true
-          fi
+        run: pip install buildozer cython
 
       - name: Build APK
-        run: |
-          buildozer android debug
+        run: buildozer android debug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: journal-apk
           path: bin/*.apk
-          retention-days: 30
